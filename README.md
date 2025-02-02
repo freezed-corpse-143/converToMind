@@ -94,7 +94,7 @@ python generate_gitmind.py data/tree1.json data/tree2.json data/fusion.json
 
 An example is as follows:
 
-![example](image\example.png)
+![example](image/example.png)
 
 ## Requirements
 
