@@ -1,10 +1,7 @@
 import os
 import json
-import re
 import sys
-from openai import OpenAI
-client = OpenAI(api_key= os.environ['BAILIAN_API_KEY'] , base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
-
+from util import client, extract_from_code_block, extract_json_from_str
 
 dependence_prompt = '''Please read input json and follow these instructions:
 1. Genertate the dependence between the elements of input json, where the "target" element should be more specific or a refined version of the "source" element.
@@ -20,10 +17,6 @@ dependence_prompt = '''Please read input json and follow these instructions:
 
 os.makedirs("./data", exist_ok=True)
 
-reformat_json_prompt = '''Please convert invalid input json to valid json.
-The output should be presented within a code block in the following format: "json\n<output>", where "<output>" is the placeholder for the output.
-'''
-
 fusion_prompt = '''Please read input two json, and follow these instructions:
 1. Genertate the dependence between the elements of the first one and those of the second one, where "source" element should be in the first json and the "target" element should be in the second json.
 2. Output should be in in the format of "```json\n<output>", where "<output>" is a placeholder. An output example is as follows:
@@ -37,30 +30,6 @@ fusion_prompt = '''Please read input two json, and follow these instructions:
 '''
 
 
-def reformat_json(text):
-    global reformat_json_prompt, client
-    completion = client.chat.completions.create(
-            model="qwen-plus",
-            messages=[
-                {'role': 'system', 'content': reformat_json_prompt},
-                {'role': 'user', 'content': f'```input json\n{text}```'}
-            ],
-            stream=False,
-            temperature=0.0
-        )
-    
-    result = completion.choices[0].message.content
-    new_result = extract_from_code_block(result)[0].strip("json").strip("<").strip(">")
-    return json.loads(new_result)
-
-def extract_from_code_block(text):
-    matches = re.findall(r'```(.*?)```', text, re.DOTALL)
-    if matches:
-        return [match.strip() for match in matches]
-    else:
-        print("No code blocks found")
-        return []
-
 def generate_dependece_graph(json_data):
     global dependence_prompt, client
     completion = client.chat.completions.create(
@@ -70,18 +39,13 @@ def generate_dependece_graph(json_data):
             {'role': 'user', 'content': f'```input json\n{json.dumps(json_data)}```'}
         ],
         stream=False,
-        temperature=0.0
+        temperature=0.01
     )
     result = completion.choices[0].message.content
     result_json_list = extract_from_code_block(result)
     if len(result_json_list) > 0:
-        result_json_str = result_json_list[0].strip("json").strip("<").strip(">")
-        try:
-            result_json = json.loads(result_json_str)
-        except Exception as e:
-            print(f"Exception: {e}", result_json_str)
-            result_json = reformat_json(result_json_str)
-        return result_json
+        result_json_str = result_json_list[0]
+        result_json = extract_json_from_str(result_json_str)
     else:
         return {}
     
@@ -94,17 +58,13 @@ def generate_dependece_fusion(json_data_1, json_data_2):
             {'role': 'user', 'content': f'```first json\n{json.dumps(json_data_1)}```\n\n```second json\n{json.dumps(json_data_2)}```'}
         ],
         stream=False,
-        temperature=0.0
+        temperature=0.01
     )
     result = completion.choices[0].message.content
     result_json_list = extract_from_code_block(result)
     if len(result_json_list) > 0:
-        result_json_str = result_json_list[0].strip("json").strip("<").strip(">")
-        try:
-            result_json = json.loads(result_json_str)
-        except Exception as e:
-            print(f"Exception: {e}", result_json_str)
-            result_json = reformat_json(result_json_str)
+        result_json_str = result_json_list[0]
+        result_json = extract_json_from_str(result_json_str)
         return result_json
     else:
         return {}
@@ -135,7 +95,7 @@ def main():
 
     file_path_1 = sys.argv[json_arg_idx[0]]
     if not os.path.exists(file_path_1):
-        print(f"error：file {file_path_1} doesn't exist")
+        print(f"error: file {file_path_1} doesn't exist")
         return
     
     json_path_list.append(file_path_1)
@@ -148,7 +108,7 @@ def main():
     else:
         file_path_2 = sys.argv[json_arg_idx[1]]
         if not os.path.exists(file_path_2):
-            print(f"error：file {file_path_2} doesn't exist")
+            print(f"error: file {file_path_2} doesn't exist")
             return
         json_path_list.append(file_path_2)
         key_list_1 = sys.argv[json_arg_idx[0]+1:json_arg_idx[1]]
